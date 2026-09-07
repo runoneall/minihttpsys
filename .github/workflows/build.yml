@@ -1,0 +1,57 @@
+name: build
+
+on:
+    workflow_dispatch:
+        inputs:
+            config_name:
+                description: 'config name'
+                required: true
+                type: string
+
+permissions:
+    contents: write
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - name: checkout
+              uses: actions/checkout@v4
+
+            - name: make build dir
+              run: mkdir build
+
+            - name: get buildroot
+              working-directory: build
+              run: ../script/get-buildroot.sh
+
+            - name: make base config
+              working-directory: build/buildroot
+              run: make qemu_riscv64_virt_defconfig
+
+            - name: copy custom config
+              working-directory: build/buildroot
+              run: rm .config && cp ../../config/${{ inputs.config_name }} .config
+
+            - name: install dependency
+              run: sudo apt update && sudo apt install -y cpio bc
+
+            - name: run make
+              working-directory: build/buildroot
+              run: make -j$(nproc)
+
+            - name: upload output dir
+              uses: actions/upload-artifact@v4
+              with:
+                  name: images
+                  path: build/buildroot/output/images/
+
+            - name: create timestamp tag
+              id: timestamp
+              run: echo "TAG=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
+            - name: create release
+              uses: softprops/action-gh-release@v1
+              with:
+                  tag_name: ${{ steps.timestamp.outputs.TAG }}
+                  files: build/buildroot/output/images/*
